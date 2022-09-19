@@ -1,6 +1,6 @@
 ---
 title: "BEE 4750/5750 Homework 1"
-author: "Your name here (your netID here)"
+author: "Caroline Herzog (crh227)"
 date: `j import Dates; Dates.Date(Dates.now())`
 weave_options:
     term: true
@@ -54,12 +54,12 @@ per day is equal to the sum of the effluent YUK mass/day in the three streams.
 Given the volume of wastewater going to each treatment option ($X_1$, $X_2$, $Q_p-X_1-X_2$), and the efficieny of removing 
 the YUK concentration Cp from each stream, we can calculate the effluent mass flow (after treatment) of each stream 
 by 
-\\ $ \text{mass flow/day } [\frac{kg}{day}] = \text{removal efficiency } * \text{concentration YUK } [\frac{kg}{m^3}]* \text{wastewater volume } [\frac{m^3}{day}]$ : 
+ $ \text{mass flow/day } [\frac{kg}{day}] = \text{removal efficiency } * \text{concentration YUK } [\frac{kg}{m^3}]* \text{wastewater volume } [\frac{m^3}{day}]$ : 
 
 ```math
 \text{ Land Removal } \to \dot{m_1} = 0.20*X_1*C_p
-
-\\ \text{ Chem. Removal } \to \dot{m_2} = 0.005*X_2*C_p
+\\ \text{ Efficiency of X_2 YUK removal, E: } \to E = 1-0.005*X_2
+\\ \text{ Chem. Removal } \to \dot{m_2} = (1-E)*X_2*C_p
 
 \\ \text{ No Removal } \to \dot{m_3} = (Q_p - X_1 - X_2)*C_p
 ```
@@ -67,11 +67,19 @@ by
 \\
 \text{ all together, } \\
 \dot{m_{total}} = \dot{m_1} + \dot{m_2} + \dot{m_3} \\
-\dot{m_{total}} = (0.20*X_1 + 0.005*X_2 + Q_p - X_1 - X_2)*C_p \\
-\dot{m_{total}} = (Q_p - 0.8*X_1 - 0.995*X_2)*C_p
+\dot{m_{total}} = (0.20*X_1 + (1-E)*X_2 + Q_p - X_1 - X_2)*C_p \\
+\dot{m_{total}} = (Q_p - 0.8*X_1 - E*X_2)*C_p \\
+C_p = \frac{\dot{m_{total}}}{Q_p}
 ```
-It is important to note that in the above equations, an important constraint is $0 \leq X_1 + X_2 \leq Q_p$.
-In other words, we cannot send more water to treatment than what is produced by the plant, and we cannot send negative amounts.
+Two important constraints are:
+```math
+\\ 0 \leq X_1 + X_2 \leq Q_p
+\\ \text{and}
+\\ Q_p - 0.8X_1 - E*X_2 \geq 0
+```
+These constraints ensure (1) that we do not send more water to treatment than what is produced by the plant or send negative amounts, 
+and (2) that our [YUK] is greater than or equal to 0, since a negative concentration does not make physical sense. The two constraints 
+appear in the code for Problems 1.3 and 1.4.
 
 We can derive similar equations to calculate the total cost of treatment given that Opt. 1 costs $\frac{X_1^2}{20}$ USD/day, 
 Opt. 2 costs $ 1.50 * X_2$ USD/day, and Opt. 3 does not cost anything. Below, Z is used to represent cost in USD:
@@ -91,12 +99,14 @@ function YUKremoval(X1, X2, Cp, Qp)
 # and computes cost and resulting YUK mass flow into brook
 
 # yuk mass flow into Pristine Brook for given values
-m_yuk = (Qp - 0.8*X1 - 0.995*X2)*Cp
+E = 1 - 0.005*X2
+m_yuk = (Qp - 0.8*X1 - E*X2)*Cp
+Cp_yuk = m_yuk/Qp
 
 # cost
 cost_yuk = (X1^2)/20 + 1.50*X2
 
-return m_yuk, cost_yuk
+return Cp_yuk, cost_yuk
 end
 ```
 
@@ -107,30 +117,73 @@ Qp = 100    # m^3/day WW produced
 Cp = 1      # kg/m^3 YUK
 X1vec = 1:100
 X2vec = 1:100
-m_yuk = zeros(100,100)
+Cp_yuk = zeros(100,100)
 cost_yuk = zeros(100,100)
 
 for i in 1:100  # loop through X1vec
     for j in 1:100      # loop through X2vec
+        
         X1 = X1vec[i]
         X2 = X2vec[j]
+        E = 1 - 0.005*X2
 
-        if 0.8*X1 + 0.995*X2 <= Qp      # checks another set of conditions
-        m_yuk[i,j], cost_yuk[i,j] = YUKremoval(X1,X2,Cp,Qp)
+        if X1 + X2 <= Qp    # makes sure both flows less than 100
+            if 0.8*X1 + E*X2 <= Qp      # checks another set of conditions
+                 Cp_yuk[i,j], cost_yuk[i,j] = YUKremoval(X1,X2,Cp,Qp)
+            end
         end
     end
 end
 
 using Plots
-scatter(m_yuk,cost_yuk, title = "Cost of Removal vs. Mass of YUK", xlabel = "Mass Flow of YUK, [kg/day]", ylabel = "Cost of Removal, [USD/day]", legend = false)
-vline!([20])
+scatter(Cp_yuk,cost_yuk, title = "Cost of Removal vs. Mass of YUK", xlabel = "Concentration YUK, [kg/m^3]", ylabel = "Cost of Removal, [USD/day]", legend = false)
+vline!([0.20])
+
 ```
 
 ## Problem 1.5
+Based on the plot from 1.4, I would select a treatment plan that appears grouped in the lower left
+of the scatter plot, where both the cost and the [YUK] will be minimized. While the cost of treatment 
+does increase as [YUK] decreases, we must ensure that any solution we choose will be below the standard
+of 20 kg/day. 
+
+For example, one solution we could select is the point (0.1913 $\frac{kg}{m^3}$, 263.75 USD/day), which 
+minimizes the cost (which can range up to 530 USD/day) while also meeting the effluent standard of 0.20 $\frac{kg}{m^3}$.
+This solution would mean $X_1$ = 65 $m^3/day$, $X_2$ = 35 $m^3/day$, and 0 $m^3/day$ WW is sent directly to the brook 
+without treatment. 
+
+Another solution is (0.1801 $\frac{kg}{m^3}$, 356.55 USD/day), which would prioritize a lower effluent [YUK] at 
+the expense of a significantly higher cost. Here, $X_1$ = 81 $m^3/day$, $X_2$ = 19 $m^3/day$, and again 0 $m^3$ wastewater 
+is sent to the brook without any treatment.
+
+This plan reflects the perspectives of interested parties because it tries to minimize the impacts of 
+(1) having a high [YUK] that could endanger public health and safety and (2) requiring a large cost for 
+a treatment plan, which may negatively impact local businesses, such as the chemical plant. In trying to 
+balance these interests, this strategy prioritizes finding a way to compromise between competing parties 
+and ensure the needs of all are being met.
+
+While the basic strategy of trying to balance competing interests will hold for any given real-world engineering 
+problem, the particular numerical experiment used above did influence the conclusions for this specific scenario. 
+My experimental design essentially looped through different values for the WW flows sent to treatment options 
+1, 2, and 3 and plotted the valid results (no negative flows, etc.), so I ended up with a range of potential solutions. 
+Another approach might be to use optimization to minimize both the cost and concentration, which may produce only one 
+possible outcome. This could prove problematic if the one solution provided ultimately does not work for the community, 
+as there is no alternative. However, changing this setup will only slightly change the value/number of exact numerical 
+solutions produced, and ultimately the idea of lowering the [YUK] below the standard while also minimizing 
+cost impact will remain the same in all setups.
 
 ## Problem 1.6
 
-## Problem 1.7
+I think obtaining more information about Pristine Brook and the physical nature of YUK would significantly help improve 
+this model. First of all, our current model assumes that (1) YUK does not decay or assimilate into the ecosystem before reaching 
+the brook and that (2) the brook stays the same throughout and does not change in flow or water quality based on season or weather. 
+As a result, our model assumes that as long as the [YUK] in the effluent WW remains below $0.20  kg/m^3$, the ecosystem and community 
+will be fine. But what if the YUK gets assimilated into the local ecosystem by being taken up by plants/animals, diffusing into 
+the atmosphere, or leeching into local soil/river silt? And what if the brook itself changes? For example, there could be a drought 
+that leaves the brook with significantly less water flow than usual. If we still output [YUK] at the mandated $0.20  kg/m^3$, would the 
+level of YUK in the brook still be safe for the local community? With more information about the flow and nature of Pristine Brook and 
+the transport properties of YUK, our model could better develop solutions to anticipate these dynamics and their potential impacts.
+
 
 # References
-https://en.wikibooks.org/wiki/LaTeX/Mathematics#Adding_text_to_equations
+<https://en.wikibooks.org/wiki/LaTeX/Mathematics#Adding_text_to_equations>
